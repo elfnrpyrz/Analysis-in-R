@@ -1,0 +1,284 @@
+---
+title: "TOM-I_Analysis EXP1&2 Mixed Effects Logistic Regression"
+author: "Elif Poyraz"
+date: '2025-02-06'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+Reading the data file from Excel:
+```{r echo=FALSE}
+library(readxl) #installing the library for reading excel files
+library(aod)
+library(tidyr)
+library(lme4)
+library(ggplot2)
+library(MASS)
+library(performance)
+```
+
+
+```{r}
+myCols <- as.character(read_excel("TOM-I_Exp1-2Combined.xlsx",skip=0, n_max = 1, col_names = FALSE)); #defining col names for the database
+
+tomI_Exp1 <- read_excel("TOM-I_Exp1-2Combined.xlsx", skip = 1, col_names = myCols, col_types = c("text", "text", "numeric", "numeric", "date", "date", "numeric", "numeric","numeric", "numeric", "numeric", "numeric","numeric", "numeric", "numeric","numeric"));
+
+TomIMixed_1 <- pivot_longer(tomI_Exp1, cols = c(FB, LD_FB, KNOW, DES), names_to = "Task", values_to = "Dependent")
+TomIMixed_2 <- pivot_longer(tomI_Exp1, cols = c(FB, LD_FB, Set_FB, KNOW, DES), names_to = "Task", values_to = "Dependent")#change columns to rows ## added by Yanyi Chen
+TomIMixed_3 <- pivot_longer(tomI_Exp1, cols = c(FB, LD_FB), names_to = "Task", values_to = "Dependent")
+
+```
+
+
+```{r}
+tomI_Exp1$AgeGroup <- ifelse(tomI_Exp1$Age >= 60, "5",
+                               ifelse(tomI_Exp1$Age >= 48, "4", "3"));
+
+TomIMixed_1$AgeGroup <- ifelse(TomIMixed_1$Age >= 60, "5",
+                               ifelse(TomIMixed_1$Age >= 48, "4", "3"));
+
+TomIMixed_2$AgeGroup <- ifelse(TomIMixed_2$Age >= 60, "5",
+                               ifelse(TomIMixed_2$Age >= 48, "4", "3"));
+```
+Summary info on all variables:
+
+```{r echo=FALSE}
+summary(tomI_Exp1);
+```
+
+
+Correlations between FB measures
+```{r}
+cor.test(tomI_Exp1$FB, tomI_Exp1$LD_FB, method="pearson")
+```
+
+Correlation Matrix
+```{r}
+library("Hmisc")
+data_sub <- subset(tomI_Exp1, select = -c(SUB_ID, Gender, DOT, DOB))
+corr1 = rcorr(as.matrix(data_sub))
+corr1
+
+```
+
+```{r}
+library(corrplot)
+#corrplot(corr1$r, type = 'lower', order = 'hclust', tl.col = 'black',
+       #  cl.ratio = 0.2, tl.srt = 45, col = COL2('PuOr', 10))
+```
+
+Full model with two interaction terms. Only LD and HD FB. Age categorical.
+```{r}
+
+#TomIMixed_1$AgeGroup <- ifelse(TomIMixed_1$Age >= 60, "5",
+                               #ifelse(TomIMixed_1$Age >= 48, "4", "3"));
+
+#TomIMixed_2$AgeGroup <- ifelse(TomIMixed_2$Age >= 60, "5",
+                               #ifelse(TomIMixed_2$Age >= 48, "4", "3"));
+
+TomIMixed_1_upd <- subset(TomIMixed_1, TomIMixed_1$Task == "FB" | TomIMixed_1$Task == "LD_FB");
+
+TomIMixed_1_upd <- within(TomIMixed_1_upd, {
+  SUB_ID <- factor(SUB_ID)
+  Task <- factor(Task)
+  AgeGroup <- factor(AgeGroup)
+});
+
+# estimate the model and store results in m
+m <- glmer(Dependent ~  Task + Opp_1 + AgeGroup + Task:Opp_1 + Task:AgeGroup + (1 | SUB_ID), data = TomIMixed_1_upd, family = binomial, control = glmerControl(optimizer = "bobyqa"), nAGQ = 10);
+
+# print the mod results without correlations among fixed effects
+print(m, corr = FALSE)
+
+summary(m)
+
+se <- sqrt(diag(vcov(m)))
+# table of estimates with 95% CI
+(tab <- cbind(Est = fixef(m), LL = fixef(m) - 1.96 * se, UL = fixef(m) + 1.96 *
+    se))
+
+# odds ratio?
+exp(tab)
+
+```
+
+```{r}
+
+TomIMixed_1_upd2 <- subset(TomIMixed_1, TomIMixed_1$Task == "FB" | TomIMixed_1$Task == "LD_FB" | TomIMixed_1$Task == "KNOW");
+TomIMixed_2_upd <- subset(TomIMixed_2, TomIMixed_2$Task != "DES"); # has Setoh task
+
+
+TomIMixed_1_upd2 <- within(TomIMixed_1_upd2, {
+  SUB_ID <- factor(SUB_ID)
+  Task <- factor(Task)
+  AgeGroup <- factor(AgeGroup)
+});
+
+TomIMixed_2_upd <- within(TomIMixed_2_upd, {
+  SUB_ID <- factor(SUB_ID)
+  Task <- factor(Task)
+  AgeGroup <- factor(AgeGroup)
+});
+```
+
+Full model with two interaction terms. KNOW, LD and HD FB. Age categorical.
+```{r age categorical}
+# estimate the model and store results in m
+m2 <- glmer(Dependent ~ Task + Opp_1 + AgeGroup + Task:Opp_1 + Task:AgeGroup + (1 | SUB_ID), data = TomIMixed_1_upd2, family = binomial, control = glmerControl(optimizer = "bobyqa"), nAGQ = 10);
+
+# print the mod results without correlations among fixed effects
+print(m2, corr = FALSE)
+
+summary(m2)
+
+se2 <- sqrt(diag(vcov(m2)))
+# table of estimates with 95% CI
+(tab2 <- cbind(Est = fixef(m2), LL = fixef(m2) - 1.96 * se2, UL = fixef(m2) + 1.96 *
+    se2))
+
+exp(tab2)
+
+```
+
+Full model with two interaction terms. Only LD and HD FB. Age continuous.
+Seems continuous model has a better fit for these exact variables. AIC is 5 points lower.
+```{r age cont}
+
+# estimate the model and store results in m
+m3 <- glmer(Dependent ~ Task + Opp_1 + Age  + Task:Opp_1 +(1 | SUB_ID), data = TomIMixed_1_upd, family = binomial, control = glmerControl(optimizer = "bobyqa"), nAGQ = 10);
+
+# print the mod results without correlations among fixed effects
+print(m3, corr = FALSE)
+
+summary(m3)
+
+se3 <- sqrt(diag(vcov(m3)))
+# table of estimates with 95% CI
+(tab3 <- cbind(Est = fixef(m3), LL = fixef(m3) - 1.96 * se3, UL = fixef(m3) + 1.96 *
+    se3))
+
+exp(tab3)
+
+```
+```{r age cont}
+
+# estimate the model and store results in m
+m5 <- glmer(Dependent ~ Task + Opp_1 + Age  + Task:Opp_1 + Age:Opp_1 +(1 | SUB_ID), data = TomIMixed_1_upd, family = binomial, control = glmerControl(optimizer = "bobyqa"), nAGQ = 10);
+
+# print the mod results without correlations among fixed effects
+print(m5, corr = FALSE)
+
+summary(m5)
+
+se5 <- sqrt(diag(vcov(m5)))
+# table of estimates with 95% CI
+(tab5 <- cbind(Est = fixef(m5), LL = fixef(m5) - 1.96 * se5, UL = fixef(m5) + 1.96 *
+    se5))
+
+exp(tab5)
+
+```
+
+
+Full model with two interaction terms. KNOW, Emma, LD and HD FB. Age continuous.
+
+```{r age continuous}
+
+# estimate the model and store results in m
+m4 <- glmer(Dependent ~ Task + Opp_1 + Age + Task:Opp_1 + Task:Age + (1 | SUB_ID), data = TomIMixed_2_upd, family = binomial, control = glmerControl(optimizer = "bobyqa"), nAGQ = 10);
+
+# print the mod results without correlations among fixed effects
+print(m4, corr = FALSE)
+
+summary(m4)
+
+se4 <- sqrt(diag(vcov(m4)))
+# table of estimates with 95% CI
+(tab4 <- cbind(Est = fixef(m4), LL = fixef(m4) - 1.96 * se4, UL = fixef(m4) + 1.96 *
+    se4))
+
+exp(tab4)
+
+```
+
+```{r}
+myCols1 <- as.character(read_excel("Exp1-2_colnames.xlsx",skip=0, n_max = 1, col_names = FALSE)); #defining col names for the database
+
+tomI_Exp12 <- read_excel("TOM-I_Exp1-2Combined.xlsx", skip = 1, col_names = myCols1, col_types = c("text", "text", "numeric", "numeric", "date", "date", "numeric", "numeric","numeric", "numeric", "numeric", "numeric","numeric", "numeric", "numeric","numeric"));
+
+TomIMixed_12 <- pivot_longer(tomI_Exp12, cols = c(Desire, Knowledge,'Low Demand FB', 'High Demand FB'), names_to = "Task", values_to = "Dependent")
+TomIMixed_22 <- pivot_longer(tomI_Exp12, cols = c(Desire, Knowledge, 'Emma Task', 'Low Demand FB', 'High Demand FB'), names_to = "Task", values_to = "Dependent")#change columns to rows ## added by Yanyi Chen
+
+```
+
+```{r}
+
+TomIMixed_12$Task <- factor(TomIMixed_12$Task, levels = c('Desire', 'Knowledge', 'Emma Task', 'Low Demand FB', 'High Demand FB'));
+
+ggplot(data= TomIMixed_12, aes(Opposites, Dependent, color=Task)) +
+  geom_point(shape = "|", size = 6, na.rm = TRUE, aes(color = factor(Task))) +
+  geom_smooth(method = glm, method.args = list(family = binomial), na.rm = TRUE, 
+              formula = y ~ x) +
+  coord_cartesian(ylim = c(0, 1), expand = 0) +
+  labs(x = "Inhibition", y = "Accuracy") +
+  theme_minimal(base_size = 16) +
+  theme(axis.line = element_line(color = "gray"),
+        axis.ticks = element_line(color = "gray"),
+        axis.ticks.length = unit(3, "mm"),
+        legend.position = "right")+
+  ggtitle("Theory of Mind & Inhibition", subtitle = "The Opposites Task")+
+  scale_y_continuous(breaks=seq(0,1,.1))+
+  scale_color_manual("Task", values = c("Desire" = "lightsalmon1", "Knowledge" = "brown2","Low Demand FB" = "royalblue", "High Demand FB" = "royalblue4"))
+
+```
+
+
+```{r}
+
+TomIMixed_22$Task <- factor(TomIMixed_22$Task, levels = c('Desire', 'Knowledge', 'Emma Task', 'Low Demand FB', 'High Demand FB'));
+
+ggplot(data= TomIMixed_22, aes(Opposites, Dependent, color=Task)) +
+  geom_point(shape = "|", size = 6, na.rm = TRUE, aes(color = factor(Task))) +
+  geom_smooth(method = glm, method.args = list(family = binomial), na.rm = TRUE, 
+              formula = y ~ x) +
+  coord_cartesian(ylim = c(0, 1), expand = 0) +
+  labs(x = "Inhibition", y = "Accuracy") +
+  theme_minimal(base_size = 16) +
+  theme(axis.line = element_line(color = "gray"),
+        axis.ticks = element_line(color = "gray"),
+        axis.ticks.length = unit(3, "mm"),
+        legend.position = "right")+
+  ggtitle("Theory of Mind & Inhibition", subtitle = "The Opposites Task")+
+  scale_y_continuous(breaks=seq(0,1,.1))+
+  scale_color_manual("Task", values = c("Desire" = "lightsalmon1", "Knowledge" = "brown2","Emma Task"= "skyblue",  "Low Demand FB" = "royalblue", "High Demand FB" = "royalblue4"))
+
+```
+
+
+```{r}
+
+ggplot(data= TomIMixed_22, aes(Age, Dependent, color=Task)) +
+  geom_point(shape = "|", size = 6, na.rm = TRUE, aes(color = factor(Task))) +
+  geom_smooth(method = glm, method.args = list(family = binomial), na.rm = TRUE, 
+              formula = y ~ x) +
+  coord_cartesian(ylim = c(0, 1), expand = 0) +
+  labs(x = "Age", y = "Accuracy") +
+  theme_minimal(base_size = 16) +
+  theme(axis.line = element_line(color = "gray"),
+        axis.ticks = element_line(color = "gray"),
+        axis.ticks.length = unit(3, "mm"),
+        legend.position = "right")+
+  scale_color_manual("Task", values = c("Desire" = "lightsalmon1", "Knowledge" = "brown2","Emma Task"= "skyblue",  "Low Demand FB" = "royalblue", "High Demand FB" = "royalblue4"))
+
+```
+
+```{r}
+check_model(m3)
+
+```
